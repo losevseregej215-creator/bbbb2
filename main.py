@@ -15,15 +15,14 @@ if not BOT_TOKEN:
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-os.makedirs(DATA_DIR, exist_ok=True)          # БД будет тут и не удалится при git pull
+os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "bot.db")
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
-# Состояния и временные данные (в памяти)
 user_states: dict[int, str] = {}
 temp_data: dict[int, dict] = {}
-contact_refs: dict[int, tuple[int, int]] = {}   # bot_msg_id -> (buyer_id, seller_id)
+contact_refs: dict[int, tuple[int, int]] = {}
 
 
 # ---------------- База данных ----------------
@@ -267,7 +266,7 @@ def handle_message(message):
     ensure_user(uid, message.from_user.username)
     text = (message.text or "").strip()
 
-    # ---- Ответ на "контактное" сообщение бота ----
+    # ---- Ответ на "контактное" сообщение ----
     if message.reply_to_message and message.reply_to_message.message_id in contact_refs:
         buyer_id, seller_id = contact_refs[message.reply_to_message.message_id]
         try:
@@ -388,7 +387,7 @@ def handle_message(message):
                          reply_markup=catalogs_kb(store["id"]))
         return
 
-    # ================== УПРАВЛЕНИЕ КАТАЛОГОМ (клик по каталогу) ==================
+    # ================== УПРАВЛЕНИЕ КАТАЛОГОМ ==================
     if state == "cat_manage":
         if text == "⬅️ Назад":
             user_states.pop(uid, None)
@@ -768,7 +767,6 @@ def handle_callback(call):
     uid = call.from_user.id
     data = call.data
 
-    # ---- Покупка: нажали "Купить" на карточке товара ----
     if data.startswith("buy:"):
         pid = int(data.split(":")[1])
         p = get_product(pid)
@@ -785,7 +783,6 @@ def handle_callback(call):
         return bot.send_message(uid, "🕐 В какое время будет удобно забрать?",
                                 reply_markup=types.ReplyKeyboardRemove())
 
-    # ---- Отмена покупки ----
     if data.startswith("cancel_buy:"):
         pid = int(data.split(":")[1])
         p = get_product(pid)
@@ -801,13 +798,11 @@ def handle_callback(call):
             bot.answer_callback_query(call.id, "Отменено")
         return
 
-    # ---- Создать каталог ----
     if data == "create_cat":
         user_states[uid] = "catalog_name"
         bot.answer_callback_query(call.id)
         return bot.send_message(uid, "Введите название каталога:")
 
-    # ---- Меню "Удалить каталог" ----
     if data == "del_cat_menu":
         store = get_store_by_owner(uid)
         cats = get_catalogs(store["id"])
@@ -819,7 +814,6 @@ def handle_callback(call):
         return bot.send_message(uid, "Выберите каталог для удаления:",
                                 reply_markup=catalogs_kb(store["id"]))
 
-    # ---- Подтверждение удаления каталога ----
     if data.startswith("confirm_del_cat:"):
         cid = int(data.split(":")[1])
         conn = db()
@@ -836,7 +830,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "Отменено")
         return open_store_menu(uid)
 
-    # ---- Добавить товар в каталог ----
     if data.startswith("add_prod:"):
         cid = int(data.split(":")[1])
         temp_data.setdefault(uid, {})["current_catalog_id"] = cid
@@ -844,7 +837,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return bot.send_message(uid, "📝 Введите название товара:")
 
-    # ---- Удалить товар ----
     if data.startswith("del_prod:"):
         cid = int(data.split(":")[1])
         prods = get_products_by_catalog(cid, only_available=False)
@@ -866,7 +858,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "Удалено")
         return bot.send_message(uid, "🗑 Товар удалён.")
 
-    # ---- Подтверждение добавления товара ----
     if data == "confirm_add_prod":
         d = temp_data.get(uid, {})
         cid = d.get("current_catalog_id")
@@ -890,7 +881,6 @@ def handle_callback(call):
         return bot.send_message(uid, "Отменено.\nВыберите каталог:",
                                 reply_markup=catalogs_kb(store["id"]))
 
-    # ---- Продавец подтверждает покупку ----
     if data.startswith("accept:"):
         pid = int(data.split(":")[1])
         conn = db()
@@ -899,7 +889,6 @@ def handle_callback(call):
             conn.close()
             return bot.answer_callback_query(call.id, "Покупка не найдена")
         conn.execute("UPDATE purchases SET status='confirmed' WHERE id=?", (pid,))
-        # Уменьшаем остаток
         prod = conn.execute("SELECT * FROM products WHERE id=?", (row["product_id"],)).fetchone()
         if prod:
             new_qty = max(0, int(prod["quantity"]) - int(row["quantity"]))
@@ -911,7 +900,6 @@ def handle_callback(call):
         buyer_id = row["user_id"]
         bot.answer_callback_query(call.id, "Подтверждено")
 
-        # Отправляем покупателю сообщение продавца
         response = store["response"] if store else None
         try:
             if response:
@@ -927,7 +915,6 @@ def handle_callback(call):
             pass
         return
 
-    # ---- Продавец отклоняет покупку ----
     if data.startswith("reject:"):
         pid = int(data.split(":")[1])
         conn = db()
@@ -945,7 +932,6 @@ def handle_callback(call):
             pass
         return
 
-    # ---- Удаление магазина ----
     if data == "confirm_del_store":
         store = get_store_by_owner(uid)
         if store:
